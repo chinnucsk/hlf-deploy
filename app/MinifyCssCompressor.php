@@ -69,7 +69,8 @@ class MinifyCssCompressor implements ICssCompressor, ISingleton
         $compressed = preg_replace_callback('@\\s*/\\*([\\s\\S]*?)\\*/\\s*@', 
             array($this, 'processComment'), $compressed);
         // remove ws around { } and last semicolon in declaration block
-        $compressed = preg_replace('/\\s*{\\s*/', '{', $compressed);
+        // softened - PW
+        $compressed = preg_replace('/\\s*{\\s*/', ' {', $compressed);
         $compressed = preg_replace('/;?\\s*}\\s*/', '}', $compressed);
         // remove ws surrounding semicolons
         $compressed = preg_replace('/\\s*;\\s*/', ';', $compressed);
@@ -83,6 +84,7 @@ class MinifyCssCompressor implements ICssCompressor, ISingleton
             /x', 'url($1)', $compressed
         );
         // remove ws between rules and colons
+        // softened - PW
         $compressed = preg_replace('/
                 \\s*
                 ([{;])              # 1 = beginning of block or rule separator 
@@ -92,7 +94,7 @@ class MinifyCssCompressor implements ICssCompressor, ISingleton
                 :
                 \\s*
                 (\\b|[#\'"])        # 3 = first character of a value
-            /x', '$1$2:$3', $compressed
+            /x', '$1 $2:$3', $compressed
         );
         // remove ws in selectors
         $compressed = preg_replace_callback('/

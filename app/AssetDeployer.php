@@ -246,8 +246,8 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
                 }
                 if ($this->arrayElement('type', $style) === self::PARENT_STYLE) {
                     $style['body'] = preg_replace(
-                        '/(@import.*)((?<!\.min)\.css)(.*)$/',
-                        '$1.min.css$2', $style['body']
+                        '/(@import.*)((?<!\.min)\.css)(.*)/',
+                        '$1.min.css$3', $style['body']
                     );
                 }
                 $output .= $style['body'] . PHP_EOL;
@@ -280,14 +280,17 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
         if (is_file($path)) {
             $contents = file_get_contents($path);
             if ($this->mode === self::PROGRESSIVE_ENHANCEMENT) {
+                $pathDiff = trim(str_replace($this->devStylePath, '', $this->prodStylePath), $this->ds);
                 foreach ($this->cookedStyles as $name => $style) {
                     if ($revert) {
-                        $pattern = '/(<link\b.+href="[^"]+)(' . preg_quote($style['publishName']) . ')(".*[^%]>)/';
+                        $pattern = '/(<link\b.+href="[^"]+)(' 
+                            . addSlashes($pathDiff) . '\/' . preg_quote($style['publishName']) 
+                            . ')(".*[^%]>)/';
                         $replacement = '$1' . str_replace('.min.css', '.css', $style['publishName']) . '$3';
                     } else {
                         $name .= '.css';
                         $pattern = '/(<link\b.+href="[^"]+)(' . preg_quote($name) . ')(".*[^%]>)/';
-                        $replacement = '$1' . str_replace('.css', '.min.css', $name) . '$3';
+                        $replacement = '$1' . str_replace('.css', '.min.css', "$pathDiff/$name") . '$3';
                     }
                     $contents = preg_replace($pattern, $replacement, $contents);
                 }
