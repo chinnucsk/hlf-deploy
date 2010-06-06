@@ -132,6 +132,7 @@ class ClosureCompilerService implements IJsCompilerService, ISingleton
                 }
             }
         }
+        return $params['js_code']; // for dev purposes, don't overload the service
         curl_setopt($this->handle, CURLOPT_POSTFIELDS, http_build_query($params));
         // execute
         $compiled = curl_exec($this->handle);
@@ -148,17 +149,17 @@ class ClosureCompilerService implements IJsCompilerService, ISingleton
     public function getScriptWarnings ()
     {
         $this->outputInfo = self::WARNINGS;
-        return $this->compileScript();
+        return $this->getCompileScript();
     }
     public function getScriptErrors () 
     {
         $this->outputInfo = self::ERRORS;
-        return $this->compileScript();
+        return $this->getCompileScript();
     }
     public function getScriptStats ()
     {
         $this->outputInfo = self::STATS;
-        return $this->compileScript();
+        return $this->getCompileScript();
     }
     //---------------------------------------
     // PROTECTED METHODS

@@ -4,6 +4,16 @@ require 'interfaces.php';
 require 'ClosureCompilerService.php';
 require 'MinifyCssCompressor.php';
 
+/**
+ * Handles asset harvesting, packaging, and deployment.
+ * Public methods that have paths as parameters will 
+ * look for available paths based on $devStylePath and 
+ * $devScriptPath.
+ * @todo work with dynamically generated includes
+ * @package default
+ * @author Peng Wang
+ */
+
 class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
 {
     //---------------------------------------
@@ -34,14 +44,14 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
     protected static $instance;
 
     protected $closureCompiler;
-    protected $rawScripts;
-    protected $cookedScripts;
-    protected $scriptHeaders;
+    protected $scripts;
+    protected $scriptCalls;
 
     protected $cssCompressor;
-    protected $rawStyles;
-    protected $cookedStyles;
-    protected $styleHeaders;
+    protected $styles;
+    protected $styleCalls;    
+
+    protected $store;
     
     //---------------------------------------
     // CONSTRUCTOR
@@ -57,12 +67,11 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
         $this->timestamped = false;
         $this->maxLineLength = 150;
         $this->mode = self::PROGRESSIVE_ENHANCEMENT;
+        $this->store = array();
         $this->closureCompiler = ClosureCompilerService::instance();
-        $this->rawScripts = array();
-        $this->cookedScripts = array();
+        $this->clearScripts();
         $this->cssCompressor = MinifyCssCompressor::instance();
-        $this->rawStyles = array();
-        $this->cookedStyles = array();
+        $this->clearStyles();
     }
     protected function __clone () {}
     public static function instance () 
@@ -87,7 +96,7 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
      * Recursively maps a directory
      * Supports results returned via callback
      */
-    public function traverseDirectory ($path, $callbackInfo = false, 
+    public function traverseDirectory ($path, $callbackInfo = null, 
                                        $typesToKeep = array(), $typesToSkip = array(), 
                                        $skipMeta = true, $dirsToSkip = array()) 
     {
@@ -115,7 +124,11 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
                     );
                     $result[$name] = $child;
                 } else {
-                    $result[] = call_user_func($callbackInfo, $path . $name);
+                    if (isset($callbackInfo)) {
+                        $result[] = call_user_func($callbackInfo, $path . $name);
+                    } else {
+                        $result[] = $name;
+                    }
                 }
             }
         }
@@ -147,7 +160,9 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
             mkdir($path, 0775, true);
         }
         file_put_contents($path . $name, $content);
-        
+        $this->log("Published file ${path}${name}"
+            // , $content
+            );
     }
     
     // TEMPLATE MANIPULATOR METHODS
@@ -167,6 +182,15 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
     {
         return (strlen(trim($string)) === 0);
     }
+    public function log ($string, $object = null) 
+    { 
+        print "<pre>$string";
+        if (isset($object)) {
+            print ':' . str_repeat(PHP_EOL, 2);
+            var_export($object);
+        } 
+        print '</pre><br/>';
+    }
     
     // ASSET DEPLOYER METHODS
     
@@ -177,12 +201,14 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
     {
         if (is_file($path)) {
             $this->addScript($path);
-            // var_export($this->cookedScripts);
+            $this->log("Added and cooked script $path");
             return true;
         } elseif (is_dir($path)) {
             $this->traverseDirectory($path, array($this, 'addScript'), array('js'), 
                                      array(), true, array('production'));
-            // var_export($this->cookedScripts);
+            $this->log("Added and cooked scripts in $path"
+                // , $this->scripts
+                );
             return true;
         } elseif (strpos($path, $this->devScriptPath) !== 0) {
             $path = $this->buildPath($this->devScriptPath, $path);
@@ -199,12 +225,14 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
     {
         if (is_file($path)) {
             $this->addStyle($path);
-            // var_export($this->cookedStyles);
+            $this->log("Added and cooked style $path");
             return true;
         } elseif (is_dir($path)) {
             $this->traverseDirectory($path, array($this, 'addStyle'), array('css'), 
                                      array(), true, array('production'));
-            var_export($this->cookedStyles);
+            $this->log("Added and cooked styles in $path"
+                // , $this->styles
+                );
             return true;
         } elseif (strpos($path, $this->devStylePath) !== 0) {
             $path = $this->buildPath($this->devStylePath, $path);
@@ -219,27 +247,43 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
     }
     /**
      * Create and configure final files
+     * Scripts are published individually, and select scripts are bundled
+     * Styles are bundled, expect specified ones for progressive enhancement
+     * @todo callee for styles
      */
-    public function publishScripts ($name = '') 
+    public function publishScripts ($callee = null, $name = null) 
     {
         $this->checkScriptPath();
-        $fullName = $this->buildFileName((!empty($name) ? $name : 'production'), 'js');
-        $this->combineIntoOutput($this->cookedScript);
-        $output = '';
-        foreach ($this->cookedScripts as $script) 
-        {
-            $output .= $script['head'] . PHP_EOL;
-            $output .= $script['body'] . PHP_EOL;
+        $fullName = $this->buildFileName((isset($name) ? $name : 'production'), 'js');
+        if (isset($callee)) {
+            $this->getScriptCalls($callee);
+            $output = '';
+            foreach ($this->scripts as $scriptName => $script) 
+            {
+                $output .= $script['head'] . PHP_EOL . $script['body'] . PHP_EOL;                
+            }
+            $this->publishFile($this->prodScriptPath, $fullName, $output);
+            $this->log('Bundled scripts ' . implode(',', $this->scriptCalls[$callee])
+                // , $output
+                );
+        } else {
+            foreach ($this->scripts as $scriptName => $script) 
+            {
+                $output = $script['head'] . PHP_EOL . $script['body'];
+                $this->publishFile($this->prodScriptPath, "$scriptName.js", $output);
+                if (isset($callee) && in_array($scriptName, $this->scriptCalls[$callee])) {
+                    $output .= $singleOutput . PHP_EOL;
+                }
+            }
         }
-        $this->publishFile($this->prodScriptPath, $fullName, $output);
     }
-    public function publishStyles ($name = '')
+    public function publishStyles ($callee = null, $name = null)
     {
         $this->checkStylePath();
         if ($this->mode === self::PROGRESSIVE_ENHANCEMENT) {
-            foreach ($this->cookedStyles as $name => &$style)
+            foreach ($this->styles as $styleName => &$style)
             {
-                $style['publishName'] = $fullName = $this->buildFileName("$name.min", 'css');
+                $style['publishName'] = $fullName = $this->buildFileName("$styleName.min", 'css');
                 $output = $style['head'] . PHP_EOL;
                 if ($this->isEmptyString(trim($style['body']))) { // TODO - refine this patch
                     continue;
@@ -254,9 +298,9 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
                 $this->publishFile($this->prodStylePath, $fullName, $output);
             }
         } else {
-            $fullName = $this->buildFileName((!empty($name) ? $name : 'production'), 'css');
+            $fullName = $this->buildFileName((isset($name) ? $name : 'production'), 'css');
             $output = '';
-            foreach ($this->cookedStyles as $style) 
+            foreach ($this->styles as $style) 
             {
                 $output .= $style['head'] . PHP_EOL;
                 $output .= $style['body'] . PHP_EOL;
@@ -266,43 +310,52 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
     }
     /**
      * Update dependent pages
+     * 
      */
-    public function updateScriptCalls ($path = '', $revert = false)
+    public function updateScriptCalls ($callee = null, $revert = false)
     {
-        
-    }
-    public function updateStyleCalls ($path = '', $revert = false)
-    {
-        if (empty($path)) {
+        if (!isset($callee)) {
             throw new RuntimeException('Template cannot be empty');
             return;
         }
-        if (is_file($path)) {
-            $contents = file_get_contents($path);
+        if (is_file($callee)) {
+            $contents = file_get_contents($callee);
+        }
+    }
+    public function updateStyleCalls ($callee = null, $revert = false)
+    {
+        if (!isset($callee)) {
+            throw new RuntimeException('Template cannot be empty');
+            return;
+        } 
+        if (is_file($callee)) {
+            $contents = file_get_contents($callee);
             if ($this->mode === self::PROGRESSIVE_ENHANCEMENT) {
                 $pathDiff = trim(str_replace($this->devStylePath, '', $this->prodStylePath), $this->ds);
-                foreach ($this->cookedStyles as $name => $style) {
+                foreach ($this->styles as $name => $style) {
                     if ($revert) {
                         $pattern = '/(<link\b.+href="[^"]+)(' 
                             . addSlashes($pathDiff) . '\/' . preg_quote($style['publishName']) 
-                            . ')(".*[^%]>)/';
+                            . ')(".*\/\s?>)/i';
                         $replacement = '$1' . str_replace('.min.css', '.css', $style['publishName']) . '$3';
                     } else {
                         $name .= '.css';
-                        $pattern = '/(<link\b.+href="[^"]+)(' . preg_quote($name) . ')(".*[^%]>)/';
+                        $pattern = '/(<link\b.+href="[^"]+)(' . preg_quote($name) . ')(".*\/\s?>)/i';
                         $replacement = '$1' . str_replace('.css', '.min.css', "$pathDiff/$name") . '$3';
                     }
                     $contents = preg_replace($pattern, $replacement, $contents);
                 }
             } else {
-                
+                // TODO
             }
-            // var_export(htmlentities($contents));
-            file_put_contents($path, $contents);
+            $this->log("Updated calls in $callee"
+                // , htmlentities($contents)
+                );
+            file_put_contents($callee, $contents);
             return true;
-        } elseif (strpos($path, $this->devStylePath) !== 0) {
-            $path = $this->buildPath($this->devStylePath, $path);
-            if (!$this->updateStyleCalls($path, $revert)) {
+        } elseif (strpos($callee, $this->devStylePath) !== 0) { 
+            $callee = $this->buildPath($this->devStylePath, $callee);
+            if (!$this->updateStyleCalls($callee, $revert)) {
                 throw new RuntimeException('Template path is still invalid.');
             } else {
                 return true;
@@ -310,11 +363,31 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
         } 
         return false;
     }
-
+    public function clearScripts () 
+    {
+        $this->clearMemory($this->scripts, 'scripts');
+    }
+    public function clearStyles () 
+    {
+        $this->clearMemory($this->styles, 'styles');
+    }
+    public function restoreScripts ()
+    {
+        $this->restoreMemory($this->scripts, 'scripts');
+    }
+    public function restoreStyles ()
+    {
+        $this->restoreMemory($this->scripts, 'styles');
+    }
+    
     //---------------------------------------
     // PROTECTED METHODS
     //---------------------------------------
-        
+    
+    /**
+     * Operate on a script or style
+     * Cook and save results. Comments are automatically removed.
+     */
     protected function addScript ($path, $skipEmpty = false) 
     {
         $name = $this->arrayElement('filename', pathinfo($path));
@@ -328,15 +401,14 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
         if ($skipEmpty && $this->isEmptyString($cooked['body'])) {
             return;
         }
-        $this->rawScripts[$name] = $raw;
-        $this->cookedScripts[$name] = $cooked;
+        $this->scripts[$name] = $cooked;
     }
     protected function addStyle ($path, $skipEmpty = false)
     {
         $name = $this->arrayElement('filename', pathinfo($path));
         $raw = file_get_contents($path);
         $cooked = array('head' => $this->getFileHeader($raw));
-        if (strpos($raw, '@import') !== false) {
+        if (strpos($raw, '@import') !== false) { // don't cook
             $cooked['body'] = str_replace($cooked['head'] . PHP_EOL, '', $raw);
             $cooked['type'] = self::PARENT_STYLE;
         } else {
@@ -347,9 +419,11 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
         if ($skipEmpty && $this->isEmptyString($cooked['body'])) {
             return;
         }
-        $this->rawStyles[$name] = $raw;
-        $this->cookedStyles[$name] = $cooked;
+        $this->styles[$name] = $cooked;
     }
+    /**
+     * Parsing helpers
+     */
     // Comment pattern matches multiline comments starting with /** and 
     // either ending with */ or **/ 
     protected function getFileHeader ($content) 
@@ -381,6 +455,37 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
         }
         return trim($content);
     }
+    protected function getScriptCalls ($callee = null) 
+    {
+        if (!isset($callee)) {
+            throw new RuntimeException('Template cannot be empty');
+            return;
+        }
+        if (is_file($callee)) {
+            $contents = file_get_contents($callee);
+            $matches = array(); preg_match_all('/(<script\b.+src="(?!http:\/\/)[^"]+\/)([^"]+)(.js".*<\/script>)/i', $contents, $matches);
+            $this->scriptCalls[$callee] = $matches[2];
+            $this->log("Getting contents of $callee"
+                // , htmlentities($contents)
+                ); 
+            $this->log("Getting called scripts"
+                // , $matches[2]
+                );
+            return true;
+        } elseif (strpos($callee, $this->devStylePath) !== 0) { 
+            $callee = $this->buildPath($this->devStylePath, $callee);
+            if (!$this->getScriptCalls($callee)) {
+                throw new RuntimeException('Template path is still invalid.');
+                return false;
+            } else {
+                return true;
+            }
+        }
+        return false;
+    }
+    /**
+     * Path helpers
+     */
     protected function checkScriptPath ()
     {
         if (!isset($this->prodScriptPath)) {
@@ -411,5 +516,28 @@ class AssetDeployer implements IAssetDeployer, ISingleton, IExtendedLanguage
         }
         $fullName[] = $extension;
         return implode('.', $fullName);
+    }
+    protected function clearMemory (&$property, $name = null, $save = true)
+    {
+        if (isset($property) && isset($name) && $save) {
+            if (!array_key_exists($name, $this->store)) {
+                $this->store[$name] = array();
+            }
+            $this->store[$name][] = $property;
+            $this->log("Added memory store for $name");
+        }
+        $property = array();
+        $this->log("Cleared $name");
+    }
+    protected function restoreMemory (&$property, $name)
+    {
+        if (!array_key_exists($name, $this->store)) {
+            throw new RuntimeException('Store does not exist');
+            return;
+        }
+        foreach ($this->store[$name] as $index => $store) {
+            $property = array_merge($property, $store);
+            $this->log("Restored memory store $index for $name");
+        }
     }
 }
