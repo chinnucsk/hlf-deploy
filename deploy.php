@@ -7,11 +7,15 @@ import_request_variables('g', 'query_var_');
 echo '<pre>'; 
 
 $d = AssetDeployer::instance();
+$d->developmentUrl = 'localhost';
+$d->productionUrl = 'pengxwang.com';
+$d->stagingUrl = 'staging.pengxwang.com';
+// $d->forceDebug = true;
 
 //---------------------------------------
 // DEPLOY CSS
 //---------------------------------------
-/*
+
 $d->devStylePath = '/Users/penguin/Sites/env.lamp/hlf-main-ndxz/ndxz-studio/site/pengxwang';
 $d->prodStylePath = $d->buildPath($d->devStylePath, 'production');
 $d->addStyles();
@@ -24,7 +28,7 @@ if (isset($query_var_revert) && $query_var_revert) {
 } else {
     $d->updateStyleCalls('test-page.php');
 }
-*/
+
 //---------------------------------------
 // DEPLOY JS
 //---------------------------------------
