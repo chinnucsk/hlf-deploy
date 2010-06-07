@@ -6,13 +6,11 @@ require 'app/AssetDeployer.php';
 
 import_request_variables('g', 'query_var_');
 
-echo '<pre>'; 
-
 $d = AssetDeployer::instance();
 $d->developmentUrl = 'localhost';
 $d->productionUrl = 'pengxwang.com';
 $d->stagingUrl = 'staging.pengxwang.com';
-// $d->forceDebug = true;
+$d->forceDebug = (isset($query_var_debug) && $query_var_debug);
 
 //---------------------------------------
 // DEPLOY CSS
@@ -53,5 +51,3 @@ if (isset($query_var_revert) && $query_var_revert) {
 } else {
     $d->updateScriptCalls(dirname(__FILE__) . '/test-page.php');
 }
-
-echo '</pre>';

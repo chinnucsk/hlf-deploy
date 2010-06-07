@@ -21,21 +21,23 @@ interface ICssCompressor
 
 interface IExtendedLanguage
 {
-    function arrayElement ($key, $array, $default);
+    function arrayElement ($key, $array, $default = false);
     function isEmptyString ($string);
-    function log ($string, $object);
+    function areSet (); // dynamic
+    function log ($string, $object = null);
 }
 
 interface IFileManager 
 {
-    function traverseDirectory ($path, $callbackInfo, 
-                                $typesToKeep, $typesToSkip, 
-                                $skipMeta, $dirsToSkip);
+    function traverseDirectory ($path, $callbackInfo = null, 
+                                $typesToKeep = array(), $typesToSkip = array(), 
+                                $skipMeta = true, $dirsToSkip = array());
     function buildPath (); // dynamic
     function diffPaths ($foil, $path);
     function publishFile ($path, $name, $content);
-    function backupFile ($source, $override, $destination);
-    function restoreBackupFile ($source, $override, $pristine, $destination);
+    function backupFile ($source, $override = true, $destination = null);
+    function restoreBackupFile ($source, $override = true, $pristine = false, 
+                                $destination = null);
 }
 
 interface IApplicationLifecycle
@@ -56,10 +58,10 @@ interface IAssetDeployer extends IFileManager, IApplicationLifecycle
 
     function addScripts ($path = '');
     function addStyles ($path = '');
-    function publishScripts ($callee, $name);
-    function publishStyles ($callee, $name);
-    function updateScriptCalls ($callee, $revert, $name);
-    function updateStyleCalls ($callee, $revert, $name);
+    function publishScripts ($callee = null, $name = null);
+    function publishStyles ($callee = null, $name = null);
+    function updateScriptCalls ($callee = null, $revert = false, $name = null);
+    function updateStyleCalls ($callee = null, $revert = false, $name = null);
     function clearScripts ();
     function clearStyles ();
     function restoreScripts ();
