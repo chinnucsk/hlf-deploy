@@ -1,5 +1,7 @@
 <?php define('DEPLOY_APP', 9999);
 
+// Remember to configure path settings and page name
+
 require 'app/AssetDeployer.php';
 
 import_request_variables('g', 'query_var_');
